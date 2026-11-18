@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HAPPY MEN'S DAY 19/11 - FLAPPY 3D</title>
+    <!-- Tải Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tải Three.js CDN để dựng thế giới Flappy Bird 3D Voxel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tải Font chữ Pixel / Game vui nhộn -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Chakra Petch', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #38bdf8;
+            touch-action: manipulation;
+        }
+        .font-pixel {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Hiệu ứng chữ nổi bật kiểu game arcade */
+        .arcade-shadow {
+            text-shadow: 0 4px 0 #1e3a8a, 0 8px 16px rgba(0, 0, 0, 0.35);
+        }
+        .arcade-btn {
+            box-shadow: 0 6px 0 #b45309, 0 12px 20px rgba(0, 0, 0, 0.3);
+            transition: transform 0.08s ease, box-shadow 0.08s ease;
+        }
+        .arcade-btn:active {
+            transform: translateY(5px);
+            box-shadow: 0 1px 0 #b45309, 0 4px 8px rgba(0, 0, 0, 0.25);
+        }
+
+        /* =========================================================
+           HIỆU ỨNG JUMPSCARE (RUNG LẮC MẠNH + NHẤP NHÁY ĐỎ/ĐEN/TRẮNG)
+           ========================================================= */
+        @keyframes violentShake {
+            0% { transform: translate(0, 0) rotate(0deg) scale(1.05); }
+            10% { transform: translate(-28px, -22px) rotate(-5deg) scale(1.16); }
+            20% { transform: translate(28px, 18px) rotate(5deg) scale(1.09); }
+            30% { transform: translate(-32px, 24px) rotate(-4deg) scale(1.22); }
+            40% { transform: translate(32px, -28px) rotate(6deg) scale(1.12); }
+            50% { transform: translate(-24px, 28px) rotate(-6deg) scale(1.19); }
+            60% { transform: translate(28px, -18px) rotate(4deg) scale(1.08); }
+            70% { transform: translate(-28px, -28px) rotate(-5deg) scale(1.24); }
+            80% { transform: translate(22px, 22px) rotate(5deg) scale(1.14); }
+            90% { transform: translate(-18px, -12px) rotate(-3deg) scale(1.18); }
+            100% { transform: translate(0, 0) rotate(0deg) scale(1.05); }
+        }
+
+        @keyframes strobeFlash {
+            0%, 49% { background-color: #000000; }
+            50%, 74% { background-color: #dc2626; } /* Đỏ máu */
+            75%, 100% { background-color: #ffffff; } /* Trắng chói */
+        }
+
+        @keyframes imageInvertFlash {
+            0%, 65% { filter: contrast(150%) brightness(100%) invert(0); }
+            66%, 82% { filter: contrast(250%) brightness(140%) invert(1); }
+            83%, 100% { filter: contrast(220%) sepia(100%) hue-rotate(-50deg) saturate(550%); }
+        }
+
+        .scare-active {
+            animation: strobeFlash 0.085s infinite !important;
+        }
+
+        .scare-image-shake {
+            animation: violentShake 0.11s infinite, imageInvertFlash 0.17s infinite !important;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden select-none">
+
+    <!-- =========================================================
+         PHẦN 1: CANVAS GAME FLAPPY BIRD 3D VOXEL
+         ========================================================= -->
+    <div id="gameContainer" class="relative w-full h-full">
+        <!-- Nơi Three.js render cảnh 3D -->
+        <div id="threeCanvasWrapper" class="w-full h-full"></div>
+
+        <!-- Bảng điểm & Tiến độ nhận quà 19/11 góc trên -->
+        <div id="hudOverlay" class="hidden absolute top-4 left-0 right-0 z-20 flex flex-col items-center pointer-events-none px-4">
+            <div class="bg-white/90 backdrop-blur-md border-4 border-blue-600 rounded-2xl px-5 py-2.5 shadow-xl flex items-center gap-4">
+                <div class="text-center">
+                    <div class="text-[10px] sm:text-xs font-bold text-blue-700 uppercase tracking-wider">Ống Cống</div>
+                    <div id="scoreDisplay" class="font-pixel text-xl sm:text-2xl text-amber-500 drop-shadow">0 / 3</div>
+                </div>
+                <div class="h-8 w-1 bg-blue-200 rounded-full"></div>
+                <div class="text-left">
+                    <div class="text-xs sm:text-sm font-bold text-slate-800">🎁 Hộp Quà 19/11</div>
+                    <div id="giftHintText" class="text-[11px] sm:text-xs text-emerald-600 font-semibold">Vượt 3 ống cống để mở!</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Màn hình bắt đầu / Chơi lại đè lên nền 3D -->
+        <div id="startOverlay" class="absolute inset-0 z-30 flex flex-col items-center justify-center p-4 bg-sky-900/25 backdrop-blur-[2px]">
+            <div class="w-full max-w-lg bg-white/95 border-4 border-blue-600 rounded-3xl p-6 sm:p-8 text-center shadow-[0_16px_0_rgba(30,58,138,0.4)]">
+                <!-- Huy hiệu sự kiện -->
+                <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-100 border-2 border-amber-400 text-amber-700 text-xs sm:text-sm font-bold uppercase mb-4">
+                    <span>👑</span>
+                    <span>Quốc Tế Đàn Ông 19/11</span>
+                    <span></span>
+                </div>
+
+                <!-- Tiêu đề Game -->
+                <h1 class="font-pixel text-xl sm:text-2xl md:text-3xl text-amber-400 arcade-shadow leading-snug mb-3">
+                    HAPPY MEN'S DAY 19/11
+                </h1>
+                <h2 class="text-lg sm:text-xl font-bold text-blue-700 uppercase tracking-wide mb-4">
+                    
+                </h2>
+
+                <!-- Hộp hướng dẫn vui nhộn -->
+                <div class="bg-sky-50 border-2 border-sky-200 rounded-2xl p-4 mb-6 text-slate-700 text-sm sm:text-base space-y-2">
+                    <p class="font-semibold text-blue-900">
+                        Chúc mừng ae ngày quốc tế đàn ôg nha 20/11 
+                    </p>
+                    <p>
+                        Ae chạm vào <span class="inline-block px-2 py-0.5 bg-white border-2 border-slate-300 rounded-lg font-bold text-xs shadow-sm">MÀN HÌNH</span> hoặc <span class="font-bold text-emerald-600"></span> để điều khiển con chim L đội vương miện bay qua 3 ống cống và nhận <span class="font-bold text-amber-600">Hộp Quà 19/11 Bí Mật nha</span>!
+                    </p>
+                </div>
+
+                <!-- Thông báo khi đâm ống cống trước khi tới quà -->
+                <div id="crashMessage" class="hidden mb-4 py-2 px-4 rounded-xl bg-rose-100 border-2 border-rose-400 text-rose-700 font-bold text-sm">
+                    Ối! Chạm ống cống rồi, thử lại để lấy quà 19/11 nhé!
+                </div>
+
+                <!-- Nút Bắt đầu chơi -->
+                <button id="startGameBtn" class="arcade-btn w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-b from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 border-2 border-amber-200 text-slate-950 font-pixel text-sm sm:text-base uppercase cursor-pointer">
+                    ▶ CHƠI NGAY
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =========================================================
+         PHẦN 2: MÀN HÌNH JUMPSCARE TOÀN MÀN HÌNH (ẨN BAN ĐẦU)
+         ========================================================= -->
+    <div id="scareOverlay" class="fixed inset-0 z-50 hidden items-center justify-center bg-black overflow-hidden">
+        <!-- Ảnh kinh dị toàn màn hình -->
+        <img id="scareImage" src="" alt="" class="w-full h-full object-cover sm:object-contain scare-image-shake pointer-events-none select-none">
+    </div>
+
+    <!-- Thẻ Audio phát tiếng hét -->
+    <audio id="scareAudio" preload="auto" loop></audio>
+
+    <script>
+        /* =========================================================================
+           HƯỚNG DẪN TỰ THAY ẢNH & ÂM THANH KINH DỊ TRỰC TIẾP TRONG CODE:
+           -------------------------------------------------------------------------
+           1. Thay ảnh kinh dị (HORROR_IMAGE_SRC):
+              - Cách 1 (Khuyên dùng khi up GitHub): Đặt ảnh cùng thư mục với file HTML này
+                và điền tên file vào. Ví dụ: const HORROR_IMAGE_SRC = "anh_ma.jpg";
+              - Cách 2: Dán trực tiếp đường link ảnh trên mạng (URL) hoặc chuỗi Base64.
+              - Mặc định bên dưới đang dùng sẵn hình khuôn mặt ma/đầu lâu SVG sắc nét
+                nhấp nháy để chạy ngay lập tức mà không cần mạng.
+
+           2. Thay âm thanh hét (HORROR_AUDIO_SRC):
+              - Đặt file âm thanh (.mp3 hoặc .wav) cùng thư mục với file HTML và điền tên:
+                Ví dụ: const HORROR_AUDIO_SRC = "doama.mp3";
+              - Nếu bạn chưa có file mp3, code đã tích hợp sẵn bộ tạo tiếng thét chói tai
+                tự động (Web Audio API) nên vẫn dọa giật mình cực mạnh!
+           ========================================================================= */
+
+        // 👇 DÁN TÊN FILE ẢNH (VD: "anh_ma.jpg"), LINK ẢNH HOẶC BASE64 VÀO DÒNG DƯỚI ĐÂY:
+        const HORROR_IMAGE_SRC = "data:image/svg+xml;utf8," + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+                <rect width="800" height="800" fill="#050505"/>
+                <defs>
+                    <radialGradient id="faceGlow" cx="50%" cy="45%" r="50%">
+                        <stop offset="0%" stop-color="#f4f4f5"/>
+                        <stop offset="65%" stop-color="#71717a"/>
+                        <stop offset="100%" stop-color="#09090b"/>
+                    </radialGradient>
+                    <filter id="distort">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" result="noise"/>
+                        <feDisplacementMap in="SourceGraphic" in2="noise" scale="18" />
+                    </filter>
+                </defs>
+                <g filter="url(#distort)">
+                    <ellipse cx="400" cy="390" rx="225" ry="295" fill="url(#faceGlow)"/>
+                    <ellipse cx="305" cy="305" rx="60" ry="75" fill="#000000"/>
+                    <ellipse cx="495" cy="305" rx="60" ry="75" fill="#000000"/>
+                    <circle cx="305" cy="310" r="12" fill="#ff0000"/>
+                    <circle cx="305" cy="310" r="4" fill="#ffffff"/>
+                    <circle cx="495" cy="310" r="12" fill="#ff0000"/>
+                    <circle cx="495" cy="310" r="4" fill="#ffffff"/>
+                    <path d="M290 375 Q285 455 275 515" stroke="#990000" stroke-width="11" fill="none" stroke-linecap="round"/>
+                    <path d="M510 375 Q520 465 530 535" stroke="#990000" stroke-width="13" fill="none" stroke-linecap="round"/>
+                    <path d="M385 410 L368 462 L395 450 Z" fill="#000000"/>
+                    <path d="M415 410 L432 462 L405 450 Z" fill="#000000"/>
+                    <ellipse cx="400" cy="575" rx="98" ry="128" fill="#000000" stroke="#450a0a" stroke-width="12"/>
+                    <polygon points="325,490 342,532 358,485" fill="#e4e4e7"/>
+                    <polygon points="363,480 380,528 396,480" fill="#e4e4e7"/>
+                    <polygon points="404,480 420,528 437,480" fill="#e4e4e7"/>
+                    <polygon points="442,485 458,532 475,490" fill="#e4e4e7"/>
+                    <polygon points="338,668 355,620 372,672" fill="#e4e4e7"/>
+                    <polygon points="384,678 400,625 416,678" fill="#e4e4e7"/>
+                    <polygon points="428,672 445,620 462,668" fill="#e4e4e7"/>
+                </g>
+            </svg>
+        `);
+
+        // 👇 DÁN TÊN FILE ÂM THANH (VD: "doama.mp3") HOẶC LINK MP3 VÀO DÒNG DƯỚI ĐÂY:
+        const HORROR_AUDIO_SRC = "doama.mp3";
+
+        // =========================================================================
+        // CÁC BIẾN DOM & ÂM THANH
+        // =========================================================================
+        const startOverlay = document.getElementById('startOverlay');
+        const hudOverlay = document.getElementById('hudOverlay');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const crashMessage = document.getElementById('crashMessage');
+        const scareOverlay = document.getElementById('scareOverlay');
+        const scareImage = document.getElementById('scareImage');
+        const scareAudio = document.getElementById('scareAudio');
+
+        scareImage.src = HORROR_IMAGE_SRC;
+        if (HORROR_AUDIO_SRC) {
+            scareAudio.src = HORROR_AUDIO_SRC;
+        }
+
+        // Âm thanh nhảy / ghi điểm vui nhộn (Web Audio API)
+        let gameAudioCtx = null;
+        function playJumpSound() {
+            try {
+                if (!gameAudioCtx) gameAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = gameAudioCtx.createOscillator();
+                const gain = gameAudioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(320, gameAudioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(620, gameAudioCtx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.18, gameAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, gameAudioCtx.currentTime + 0.12);
+                osc.connect(gain);
+                gain.connect(gameAudioCtx.destination);
+                osc.start();
+                osc.stop(gameAudioCtx.currentTime + 0.12);
+            } catch (e) {}
+        }
+
+        function playPointSound() {
+            try {
+                if (!gameAudioCtx) gameAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = gameAudioCtx.createOscillator();
+                const gain = gameAudioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(587.33, gameAudioCtx.currentTime); // D5
+                osc.frequency.setValueAtTime(880, gameAudioCtx.currentTime + 0.08); // A5
+                gain.gain.setValueAtTime(0.2, gameAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, gameAudioCtx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(gameAudioCtx.destination);
+                osc.start();
+                osc.stop(gameAudioCtx.currentTime + 0.25);
+            } catch (e) {}
+        }
+
+        // Bộ tạo âm thanh thét kinh dị dự phòng (khi chưa có file mp3)
+        function playSynthScream() {
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioCtx();
+
+                const osc1 = ctx.createOscillator();
+                const osc2 = ctx.createOscillator();
+                const osc3 = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+
+                osc1.type = 'sawtooth';
+                osc2.type = 'square';
+                osc3.type = 'sawtooth';
+
+                const now = ctx.currentTime;
+                osc1.frequency.setValueAtTime(650, now);
+                osc1.frequency.exponentialRampToValueAtTime(1650, now + 0.15);
+                osc1.frequency.linearRampToValueAtTime(1100, now + 0.6);
+                osc1.frequency.exponentialRampToValueAtTime(1950, now + 1.2);
+
+                osc2.frequency.setValueAtTime(680, now);
+                osc2.frequency.exponentialRampToValueAtTime(1720, now + 0.15);
+                osc2.frequency.linearRampToValueAtTime(980, now + 0.8);
+
+                osc3.frequency.setValueAtTime(175, now);
+                osc3.frequency.linearRampToValueAtTime(90, now + 1.5);
+
+                gainNode.gain.setValueAtTime(1.0, now);
+                gainNode.gain.setValueAtTime(1.0, now + 2.5);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 3.5);
+
+                osc1.connect(gainNode);
+                osc2.connect(gainNode);
+                osc3.connect(gainNode);
+                gainNode.connect(ctx.destination);
+
+                osc1.start(now);
+                osc2.start(now);
+                osc3.start(now);
+
+                osc1.stop(now + 3.5);
+                osc2.stop(now + 3.5);
+                osc3.stop(now + 3.5);
+            } catch (e) {}
+        }
+
+        function requestFullScreenMode() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(() => {});
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+        }
+
+        // =========================================================================
+        // KÍCH HOẠT JUMPSCARE TOÀN MÀN HÌNH
+        // =========================================================================
+        let isScared = false;
+        function triggerJumpscare() {
+            if (isScared) return;
+            isScared = true;
+            gameState = 'scared';
+
+            requestFullScreenMode();
+
+            hudOverlay.classList.add('hidden');
+            startOverlay.classList.add('hidden');
+            scareOverlay.classList.remove('hidden');
+            scareOverlay.classList.add('flex', 'scare-active');
+
+            if (navigator.vibrate) {
+                navigator.vibrate([400, 100, 400, 100, 600, 100, 800]);
+            }
+
+            scareAudio.volume = 1.0;
+            const playPromise = scareAudio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {
+                    playSynthScream();
+                });
+            } else {
+                playSynthScream();
+            }
+        }
+
+        // =========================================================================
+        // KHỞI TẠO CẢNH 3D VOXEL FLAPPY BIRD BẰNG THREE.JS
+        // =========================================================================
+        let scene, camera, renderer;
+        let birdGroup, leftWing, rightWing;
+        let pipes = [];
+        let clouds = [];
+        let groundTiles = [];
+        let giftBoxMesh = null;
+
+        // Trạng thái game: 'menu' | 'playing' | 'gameover' | 'scared'
+        let gameState = 'menu';
+        let birdVelocity = 0;
+        let score = 0;
+        let lastTime = 0;
+
+        // Thông số vật lý dễ chơi cho học sinh
+        const GRAVITY = -26;
+        const JUMP_FORCE = 9.2;
+        const PIPE_SPEED = 6.2;
+        const PIPE_SPACING = 11.5;
+        const GAP_HEIGHT = 4.6; // Khe ống cống rộng rãi để dễ bay qua
+        const BIRD_X = -3.5;
+
+        function init3DScene() {
+            const wrapper = document.getElementById('threeCanvasWrapper');
+
+            // 1. Tạo Scene bầu trời xanh tươi sáng
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x38bdf8);
+            scene.fog = new THREE.Fog(0x38bdf8, 22, 55);
+
+            // 2. Camera góc nhìn 3D hơi chéo tạo chiều sâu Voxel đẹp mắt
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(-1.5, 1.5, 16.5);
+            camera.lookAt(1.5, 0.5, 0);
+
+            // 3. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            wrapper.appendChild(renderer.domElement);
+
+            // 4. Ánh sáng mặt trời tươi sáng
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.72);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xfffbeb, 0.9);
+            dirLight.position.set(10, 20, 15);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            // 5. Tạo chú chim Voxel đội vương miện 19/11
+            createVoxelBird();
+
+            // 6. Tạo mặt đất cỏ xanh & đất nâu chạy vô tận
+            createVoxelGround();
+
+            // 7. Tạo mây khối Voxel bồng bềnh
+            createVoxelClouds();
+
+            // 8. Khởi tạo sẵn các ống cống 3D
+            resetPipes();
+
+            // Lắng nghe thay đổi kích thước màn hình
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createVoxelBird() {
+            birdGroup = new THREE.Group();
+
+            // Thân chim màu vàng tươi
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0xfacc15 });
+            const bodyGeo = new THREE.BoxGeometry(1.1, 0.95, 0.95);
+            const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            bodyMesh.castShadow = true;
+            birdGroup.add(bodyMesh);
+
+            // Bụng chim màu kem
+            const bellyMat = new THREE.MeshLambertMaterial({ color: 0xfef08a });
+            const bellyGeo = new THREE.BoxGeometry(0.8, 0.45, 0.98);
+            const bellyMesh = new THREE.Mesh(bellyGeo, bellyMat);
+            bellyMesh.position.set(0.1, -0.25, 0);
+            birdGroup.add(bellyMesh);
+
+            // Mỏ chim màu cam
+            const beakMat = new THREE.MeshLambertMaterial({ color: 0xf97316 });
+            const beakGeo = new THREE.BoxGeometry(0.45, 0.3, 0.45);
+            const beakMesh = new THREE.Mesh(beakGeo, beakMat);
+            beakMesh.position.set(0.7, -0.05, 0);
+            birdGroup.add(beakMesh);
+
+            // Mắt trắng & con ngươi đen to tròn dễ thương
+            const eyeWhiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const eyePupilMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+
+            const eyeGeo = new THREE.BoxGeometry(0.26, 0.28, 0.12);
+            const pupilGeo = new THREE.BoxGeometry(0.14, 0.16, 0.14);
+
+            const leftEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+            leftEye.position.set(0.32, 0.18, 0.46);
+            birdGroup.add(leftEye);
+
+            const leftPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+            leftPupil.position.set(0.38, 0.18, 0.48);
+            birdGroup.add(leftPupil);
+
+            const rightEye = new THREE.Mesh(eyeGeo, eyeWhiteMat);
+            rightEye.position.set(0.32, 0.18, -0.46);
+            birdGroup.add(rightEye);
+
+            const rightPupil = new THREE.Mesh(pupilGeo, eyePupilMat);
+            rightPupil.position.set(0.38, 0.18, -0.48);
+            birdGroup.add(rightPupil);
+
+            // Chiếc nơ xanh lịch lãm 19/11 ở cổ
+            const tieMat = new THREE.MeshLambertMaterial({ color: 0x2563eb });
+            const tieGeo = new THREE.BoxGeometry(0.22, 0.25, 0.55);
+            const tieMesh = new THREE.Mesh(tieGeo, tieMat);
+            tieMesh.position.set(0.56, -0.32, 0);
+            birdGroup.add(tieMesh);
+
+            // Vương miện vàng 19/11 trên đầu
+            const crownGroup = new THREE.Group();
+            const crownMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+            const crownBase = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.55), crownMat);
+            crownGroup.add(crownBase);
+
+            const spikeGeo = new THREE.BoxGeometry(0.14, 0.18, 0.14);
+            const positions = [
+                [-0.2, 0.16, -0.2], [0.2, 0.16, -0.2],
+                [-0.2, 0.16, 0.2], [0.2, 0.16, 0.2]
+            ];
+            positions.forEach(pos => {
+                const spike = new THREE.Mesh(spikeGeo, crownMat);
+                spike.position.set(...pos);
+                crownGroup.add(spike);
+            });
+            crownGroup.position.set(0, 0.56, 0);
+            birdGroup.add(crownGroup);
+
+            // Cánh trái và cánh phải vỗ nhịp nhàng
+            const wingMat = new THREE.MeshLambertMaterial({ color: 0xeab308 });
+            const wingGeo = new THREE.BoxGeometry(0.55, 0.22, 0.25);
+
+            leftWing = new THREE.Mesh(wingGeo, wingMat);
+            leftWing.position.set(-0.05, 0, 0.58);
+            birdGroup.add(leftWing);
+
+            rightWing = new THREE.Mesh(wingGeo, wingMat);
+            rightWing.position.set(-0.05, 0, -0.58);
+            birdGroup.add(rightWing);
+
+            birdGroup.position.set(BIRD_X, 1, 0);
+            scene.add(birdGroup);
+        }
+
+        function createVoxelGround() {
+            const grassMat = new THREE.MeshLambertMaterial({ color: 0x22c55e });
+            const dirtMat = new THREE.MeshLambertMaterial({ color: 0x92400e });
+
+            for (let i = 0; i < 16; i++) {
+                const tileGroup = new THREE.Group();
+                const grass = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 8), grassMat);
+                grass.position.y = -6.2;
+                grass.receiveShadow = true;
+
+                const dirt = new THREE.Mesh(new THREE.BoxGeometry(4, 3.0, 8), dirtMat);
+                dirt.position.y = -8.0;
+
+                tileGroup.add(grass);
+                tileGroup.add(dirt);
+                tileGroup.position.x = -16 + i * 4;
+                scene.add(tileGroup);
+                groundTiles.push(tileGroup);
+            }
+        }
+
+        function createVoxelClouds() {
+            const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            for (let i = 0; i < 8; i++) {
+                const cloudGroup = new THREE.Group();
+                const b1 = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.9, 1.4), cloudMat);
+                const b2 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 1.2), cloudMat);
+                b2.position.set(0.3, 0.55, 0);
+                const b3 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 1.1), cloudMat);
+                b3.position.set(-0.6, 0.35, 0.1);
+
+                cloudGroup.add(b1, b2, b3);
+                cloudGroup.position.set(
+                    -12 + i * 7,
+                    3.2 + Math.random() * 3.5,
+                    -5 - Math.random() * 6
+                );
+                scene.add(cloudGroup);
+                clouds.push(cloudGroup);
+            }
+        }
+
+        // Tạo 1 cặp ống cống 3D (có thể gắn kèm Hộp Quà 19/11 ở ống thứ 3)
+        function createPipePair(xPos, pipeIndex) {
+            const pipeGroup = new THREE.Group();
+            const pipeMat = new THREE.MeshLambertMaterial({ color: 0x16a34a });
+            const rimMat = new THREE.MeshLambertMaterial({ color: 0x15803d });
+
+            // Chiều cao tâm khe hở
+            const gapCenterY = (Math.random() * 3.6) - 1.2;
+            const pipeHeight = 14;
+
+            // Ống trên
+            const topPipe = new THREE.Mesh(new THREE.BoxGeometry(1.8, pipeHeight, 1.8), pipeMat);
+            topPipe.position.y = gapCenterY + GAP_HEIGHT / 2 + pipeHeight / 2;
+            topPipe.castShadow = true;
+
+            const topRim = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 2.1), rimMat);
+            topRim.position.y = gapCenterY + GAP_HEIGHT / 2 + 0.35;
+
+            // Ống dưới
+            const bottomPipe = new THREE.Mesh(new THREE.BoxGeometry(1.8, pipeHeight, 1.8), pipeMat);
+            bottomPipe.position.y = gapCenterY - GAP_HEIGHT / 2 - pipeHeight / 2;
+            bottomPipe.castShadow = true;
+
+            const bottomRim = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 2.1), rimMat);
+            bottomRim.position.y = gapCenterY - GAP_HEIGHT / 2 - 0.35;
+
+            pipeGroup.add(topPipe, topRim, bottomPipe, bottomRim);
+
+            // Nếu là ống cống thứ 3 (index === 2), đặt một Hộp Quà 19/11 vàng rực lơ lửng ngay giữa khe hở!
+            let hasGift = false;
+            if (pipeIndex === 2) {
+                hasGift = true;
+                const giftGroup = new THREE.Group();
+                const boxMesh = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.1, 1.1, 1.1),
+                    new THREE.MeshLambertMaterial({ color: 0xef4444 })
+                );
+                const ribbon1 = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.18, 1.18, 0.25),
+                    new THREE.MeshLambertMaterial({ color: 0xfacc15 })
+                );
+                const ribbon2 = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.25, 1.18, 1.18),
+                    new THREE.MeshLambertMaterial({ color: 0xfacc15 })
+                );
+                giftGroup.add(boxMesh, ribbon1, ribbon2);
+                giftGroup.position.set(0, gapCenterY, 0);
+                pipeGroup.add(giftGroup);
+                giftBoxMesh = giftGroup;
+            }
+
+            pipeGroup.position.x = xPos;
+            scene.add(pipeGroup);
+
+            return {
+                group: pipeGroup,
+                gapCenterY: gapCenterY,
+                passed: false,
+                hasGift: hasGift
+            };
+        }
+
+        function resetPipes() {
+            pipes.forEach(p => scene.remove(p.group));
+            pipes = [];
+            giftBoxMesh = null;
+
+            for (let i = 0; i < 4; i++) {
+                const x = 8 + i * PIPE_SPACING;
+                pipes.push(createPipePair(x, i));
+            }
+        }
+
+        function startGame() {
+            isScared = false;
+            score = 0;
+            birdVelocity = 0;
+            birdGroup.position.set(BIRD_X, 1.0, 0);
+            birdGroup.rotation.z = 0;
+
+            scoreDisplay.textContent = "0 / 3";
+            crashMessage.classList.add('hidden');
+            startOverlay.classList.add('hidden');
+            hudOverlay.classList.remove('hidden');
+
+            resetPipes();
+            gameState = 'playing';
+            flapBird();
+        }
+
+        function flapBird() {
+            if (gameState !== 'playing') return;
+            birdVelocity = JUMP_FORCE;
+            playJumpSound();
+        }
+
+        function handleGameOver() {
+            gameState = 'gameover';
+            hudOverlay.classList.add('hidden');
+            crashMessage.classList.remove('hidden');
+            startGameBtn.textContent = "↻ CHƠI LẠI";
+            startOverlay.classList.remove('hidden');
+        }
+
+        // Điều khiển bằng chuột, chạm màn hình và phím Space
+        startGameBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') {
+                e.preventDefault();
+                if (gameState === 'playing') {
+                    flapBird();
+                } else if (gameState === 'menu' || gameState === 'gameover') {
+                    startGame();
+                }
+            }
+        });
+
+        window.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('button')) return;
+            if (gameState === 'playing') {
+                flapBird();
+            }
+        });
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // =========================================================================
+        // VÒNG LẶP ANIMATION 3D
+        // =========================================================================
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min((time - lastTime) / 1000, 0.05) || 0.016;
+            lastTime = time;
+
+            if (gameState === 'scared') return;
+
+            // Hiệu ứng vỗ cánh cho chim
+            const wingAngle = Math.sin(time * 0.018) * 0.55;
+            if (leftWing && rightWing) {
+                leftWing.rotation.x = wingAngle;
+                rightWing.rotation.x = -wingAngle;
+            }
+
+            // Xoay hộp quà 19/11 lấp lánh
+            if (giftBoxMesh) {
+                giftBoxMesh.rotation.y += dt * 2.5;
+                giftBoxMesh.rotation.x = Math.sin(time * 0.005) * 0.2;
+            }
+
+            // Mây trôi nhẹ nhàng
+            clouds.forEach(c => {
+                c.position.x -= dt * 1.1;
+                if (c.position.x < -22) c.position.x = 26;
+            });
+
+            if (gameState === 'menu' || gameState === 'gameover') {
+                // Chim bay lượn nhấp nhô ở màn hình chờ
+                birdGroup.position.y = 1.0 + Math.sin(time * 0.005) * 0.35;
+                birdGroup.rotation.z = Math.sin(time * 0.005) * 0.1;
+
+                // Mặt đất trôi chậm
+                groundTiles.forEach(tile => {
+                    tile.position.x -= dt * 2.5;
+                    if (tile.position.x < -20) tile.position.x += 64;
+                });
+            } else if (gameState === 'playing') {
+                // Vật lý rơi & nhảy của chim
+                birdVelocity += GRAVITY * dt;
+                birdGroup.position.y += birdVelocity * dt;
+
+                // Nghiêng đầu chim theo vận tốc bay
+                const targetRot = Math.max(-0.6, Math.min(0.55, birdVelocity * 0.06));
+                birdGroup.rotation.z += (targetRot - birdGroup.rotation.z) * 12 * dt;
+
+                // Chuyển động mặt đất
+                groundTiles.forEach(tile => {
+                    tile.position.x -= PIPE_SPEED * dt;
+                    if (tile.position.x < -20) tile.position.x += 64;
+                });
+
+                // Kiểm tra chạm mặt đất hoặc bay quá trần
+                if (birdGroup.position.y < -5.35) {
+                    birdGroup.position.y = -5.35;
+                    handleGameOver();
+                }
+                if (birdGroup.position.y > 7.2) {
+                    birdGroup.position.y = 7.2;
+                    birdVelocity = 0;
+                }
+
+                // Di chuyển ống cống & kiểm tra va chạm / ghi điểm
+                for (let i = 0; i < pipes.length; i++) {
+                    const p = pipes[i];
+                    p.group.position.x -= PIPE_SPEED * dt;
+
+                    const dx = Math.abs(p.group.position.x - birdGroup.position.x);
+
+                    // Khi chim chạm vào Hộp Quà 19/11 ở ống thứ 3 -> DỌA GIẬT MÌNH NGAY!
+                    if (p.hasGift && dx < 1.1) {
+                        triggerJumpscare();
+                        return;
+                    }
+
+                    // Kiểm tra va chạm với thân ống cống (hitbox rộng 1.25 để công bằng)
+                    if (dx < 1.25) {
+                        const halfGap = GAP_HEIGHT / 2 - 0.38;
+                        if (
+                            birdGroup.position.y > p.gapCenterY + halfGap ||
+                            birdGroup.position.y < p.gapCenterY - halfGap
+                        ) {
+                            handleGameOver();
+                            return;
+                        }
+                    }
+
+                    // Ghi điểm khi vượt qua tâm ống cống
+                    if (!p.passed && p.group.position.x < birdGroup.position.x) {
+                        p.passed = true;
+                        score++;
+                        scoreDisplay.textContent = `${score} / 3`;
+                        playPointSound();
+
+                        // Khi vượt qua ống cống thứ 3 -> Kích hoạt Jumpscare toàn màn hình!
+                        if (score >= 3) {
+                            triggerJumpscare();
+                            return;
+                        }
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Khởi chạy game khi tải xong trang
+        window.onload = function () {
+            init3DScene();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
